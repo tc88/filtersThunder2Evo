@@ -1,0 +1,3 @@
+#!/bin/bash
+
+./filtersThunder2Evo examples/thunderFilters evoFilters test

@@ -1,0 +1,18 @@
+MailnewsTagsUri=
+mailnews.tags.ae_autoextract.tag:==:AE AutoExtract
+RootFolderUri=
+mailnews.customHeaders=
+version="9"
+logging="no"
+name="foo"
+enabled="yes"
+type="17"
+action="Move to folder"
+actionValue="imap://mailroot.com/foo/bar"
+condition="AND (from,contains,foo bar)"
+name="bar"
+enabled="yes"
+type="17"
+action="Move to folder"
+actionValue="imap://mailroot.de/foo"
+condition="OR (subject,is,bar) OR (body,contains,foo)"

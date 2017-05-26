@@ -1,0 +1,138 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# created in 2017/05 by Thorben Casper
+
+import re
+import numpy as np
+import argparse
+
+if __name__ == "__main__":
+
+	# input parser
+	parser = argparse.ArgumentParser(
+		description='''This script converts Thunderbird message filters to Evolution message filters.''',
+		epilog='''Created in May 2017 by Thorben Casper''')
+	parser.add_argument("thunderbirdMsgFilters", help="message filters from Thunderbird obtained by export functionality")
+	parser.add_argument("evolutionMsgFilters", help=".xml file to which evolution filters shall be written")
+	parser.add_argument("uri", help="path to email folder structure (without trailing '/', e.g. foler://1234567890.12345.1%23laptopName)")
+	parser_args = parser.parse_args()
+	thunderFile = parser_args.thunderbirdMsgFilters
+	evoFile = parser_args.evolutionMsgFilters
+	uri = parser_args.uri
+	
+	# translations that map thunderbird commands to evolution commands
+	cmdTrans1 = {
+				'subject':'subject',
+				'from':'sender',
+				'body':'body',
+				'Move to folder':'move-to-folder',
+				'to':'to',
+				'yes':'true',
+				'no':'false'
+			    }
+	cmdTrans2 = {
+				'subject':'subject',
+				'from':'sender',
+				'body':'body',
+				'to':'recipient'
+				}
+	cmdTrans3 = {
+				'subject':['subject','string'],
+				'from':['sender','string'],
+				'body':['word','string'],
+				'to':['recipient','address']
+				}
+
+	# initializations
+	filterNameList = []			# name of the filter
+	enabledList = []			# whether filter is enabled
+	actionList = []				# action that shall be executed when condition is fulfilled
+	destList = []				# destination for the message to be filtered
+	groupingList = []			# whether any/all conditions has/have to be met)
+	condFieldList = []			# field on which the condition applies
+	condComparatorList = []		# comparator that is used (e.g. 'contains', 'is', 'does not contain', ...)
+	condValueList = []			# value that the field is compared to
+	
+	# read from Thunderbird file
+	f = open(thunderFile,'r')
+	for line in f:
+		# parsing filter names
+		if 'name=' in line: 
+			match = re.search(r'"(.*)"',line)
+			filterNameList.append(match.group(1))
+		# parsing enabled strings
+		if 'enabled=' in line:
+			match = re.search(r'"(.*)"',line)
+			enabledList.append(match.group(1))
+		# parsing actions
+		if 'action=' in line:
+			match = re.search(r'"(.*)"',line)
+			actionList.append(match.group(1))
+		# parsing destinations
+		if 'actionValue=' in line:
+			match = re.search(r'\.(de|com)/(.*)"',line)
+			destList.append(match.group(2))
+		# parsing condition line
+		if 'condition=' in line:
+			if 'OR' in line:
+				groupingList.append('any')
+			if 'AND' in line:
+				groupingList.append('all')
+			# using a regex to parse triples (in general tuples) of data that are used in Thunderbird filter file
+			match = re.findall(r'([\(,][^,\)]*)(?=[,\)])',line) # using lookahead regex
+			match = np.array(match) # using numpy arrays since easier to slice 
+			tuplePos = 2;
+			# append an empty list to each list, since one ruleset can have several rules
+			condFieldList.append([])
+			condComparatorList.append([])
+			condValueList.append([])
+			# append to each sublist according to the matches from the tuples
+			for i in range(0,len(match)):
+				if match[i][0] == '(':
+					condFieldList[-1].append(str(match[i][1:]))
+					tuplePos = 2;
+				if match[i][0] == ',':
+					if tuplePos == 2:
+						condComparatorList[-1].append(str(match[i][1:]))
+					elif tuplePos == 3:
+						condValueList[-1].append(str(match[i][1:]))
+					elif tuplePos > 3: # treatment of the case when one of the tuple entries contains a comma
+						condValueList[-1][-1] += ','+str(match[i][1:])
+					tuplePos += 1
+	f.close()	
+
+	# write to Evolution file
+	f = open(evoFile,'w')
+	# write header
+	f.write('<?xml version="1.0"?>\n')
+	f.write('<filteroptions>\n')
+	f.write('  <ruleset>\n')
+
+	# write the different rule sets
+	for ruleNr in range(0,len(filterNameList)):
+		f.write('    <rule enabled="'+cmdTrans1[enabledList[ruleNr]]+'" grouping="'+groupingList[ruleNr]+'" source="incoming">\n')
+		f.write('      <title>'+filterNameList[ruleNr]+'</title>\n')
+		f.write('      <partset>\n')
+		# write the different rules for current rule set
+		for partNr in range(0,len(condFieldList[ruleNr])):
+			condNames = condFieldList[ruleNr]
+			condValues = condComparatorList[ruleNr]
+			condStrings = condValueList[ruleNr]
+			f.write('        <part name="'+cmdTrans1[condNames[partNr]]+'">\n')
+			f.write('          <value name="'+cmdTrans2[condNames[partNr]]+'-type" type="option" value="'+condValues[partNr]+'"/>\n')
+			f.write('          <value name="'+cmdTrans3[condNames[partNr]][0]+'" type="'+cmdTrans3[condNames[partNr]][1]+'" allow-empty="false">\n')
+			f.write('            <string>'+condStrings[partNr]+'</string>\n')
+			f.write('          </value>\n')
+			f.write('        </part>\n')
+		f.write('      </partset>\n')
+		f.write('      <actionset>\n')
+		f.write('        <part name="'+cmdTrans1[actionList[ruleNr]]+'">\n')
+		f.write('          <value name="folder" type="folder">\n')
+		f.write('            <folder uri="'+uri+'/'+destList[ruleNr]+'"/>\n')
+		f.write('          </value>\n')
+		f.write('        </part>\n')
+		f.write('      </actionset>\n')
+		f.write('    </rule>\n')
+	f.write('  </ruleset>\n')
+	f.write('</filteroptions>\n')
+	f.close()
